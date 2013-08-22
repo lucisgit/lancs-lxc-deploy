@@ -11,9 +11,8 @@ You need to have some required packages installed on host:
 
 Next, you need to set up control groups:
 
-    echo "none /cgroup cgroup defaults 0 0" >> /etc/fstab
-    mkdir -p /cgroup
-    mount /cgroup
+    echo "cgroup /sys/fs/cgroup cgroup defaults 0 0" >> /etc/fstab
+    mount /sys/fs/cgroup
 
 Finally, set up network the way it is done in [sample interfaces file](https://github.com/lucisgit/lancs-lxc-deploy/blob/master/etc/network/interfaces).
 
