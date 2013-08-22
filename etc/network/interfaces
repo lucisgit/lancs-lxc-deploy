@@ -1,0 +1,27 @@
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+allow-hotplug eth0
+iface eth0 inet manual
+
+auto br0
+iface br0 inet dhcp
+    bridge_ports eth0
+    max_wait 0
+
+auto br1
+iface br1 inet static
+    max_wait 0
+    bridge_fd 0
+    bridge_ports dummy0
+    address 192.168.254.1
+    netmask 255.255.255.0
+    network 192.168.254.0
+    pre-up iptables -t nat -A POSTROUTING -o br0 -j MASQUERADE #masquerade source IP in packets
+    post-up echo "1" > /proc/sys/net/ipv4/ip_forward #let's enable port forwarding to make NAT possible
+    post-down iptables -t nat -D POSTROUTING -o br0 -j MASQUERADE #remove rule on exit
