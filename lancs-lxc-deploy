@@ -1,0 +1,229 @@
+#!/bin/bash
+
+# Copyright (C) 2013 Ruslan Kabalin, Lancaster University, UK
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; version 2 dated June,
+# 1991.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301 USA.
+#
+# Script uses some bits and ideas from the script by Robert Glonek
+# (http://glonek.co.uk/tips-tricks/lxc-on-ubuntu-howto-tutorial/)
+
+REPOURL="http://ftp.us.debian.org/debian"
+LOCALE="en_GB.UTF-8 UTF-8"
+PACKAGES="vim less bash-completion" # space-separated packages to install
+
+function usage {
+        echo "Usage: $0 {NAME} {LOCATION} {ARCH} {DISTRO} {CIDR} {BRIDGE/NAT}"
+        echo "E.g. $0 somecontainer /lxc/somecontainer amd64 wheezy 192.168.100.2/24 br1"
+        echo "Note: /lxc/somecontainer will be created for you"
+        echo "ARCH: amd64 or i386, or whatever you use."
+        echo "CIDR: IP address in CIDR notation, e.g. 192.168.0.1/24"
+        echo "BRIDGE/NAT should be interface NAME: br0 bridge / br1 nat"
+        exit 1
+}
+
+#some checks
+NAME=$1
+LOCATION=$2
+ARCH=$3
+DISTRO=$4
+CIDR=$5
+TYPE=$6
+
+IP="$(echo $CIDR| sed 's/\/.\+//g')"
+
+if [[ "$#" -ne "6" ]]; then
+    usage
+fi
+
+if [[ "$ARCH" != "amd64" && "$ARCH" != "i386" ]]; then
+    usage
+fi
+
+# Debootstrap routines
+DEBOOTSTRAP=1
+if [[ -d "$LOCATION/rootfs" ]]; then
+    echo "It seems that $LOCATION/rootfs already exists."
+    echo "What do you want to do?"
+    echo "    1. Delete $LOCATION/rootfs and create new container template."
+    echo "    2. Update configuration of existing \"$NAME\" container with the new settings."
+    echo "    3. Quit."
+    read -p "Enter your choice? " answer
+
+    if [[ "$answer" -eq "1" ]]; then
+        rm -rf "$LOCATION/rootfs"
+    elif [[ "$answer" -eq "2" ]]; then
+        DEBOOTSTRAP=0
+    else
+        exit 1
+    fi
+fi
+
+if [[ "$DEBOOTSTRAP" == "1" ]]; then
+    echo "Fetching filesystem..."
+    mkdir -p "$LOCATION/rootfs" > /dev/null 2>&1
+    debootstrap --arch=$ARCH $DISTRO $LOCATION/rootfs $REPOURL || exit 0
+fi
+
+# Generate container main config file
+echo "Generating container main config file..."
+cat <<EOF > $LOCATION/config
+# $LOCATION/config
+
+## Container
+lxc.utsname = $NAME
+lxc.rootfs = $LOCATION/rootfs
+lxc.mount = $LOCATION/fstab
+
+lxc.arch = $ARCH
+
+lxc.tty = 6
+lxc.pts = 1024
+
+## Network
+lxc.network.type = veth
+lxc.network.flags = up
+lxc.network.mtu = 1500
+lxc.network.link = $TYPE
+lxc.network.ipv4 = $CIDR
+lxc.network.ipv4.gateway = auto
+lxc.network.name = eth0
+
+## Capabilities
+lxc.cap.drop = mac_admin
+lxc.cap.drop = mac_override
+lxc.cap.drop = sys_admin
+lxc.cap.drop = sys_module
+
+## Devices
+lxc.cgroup.devices.deny = a # Deny all devices
+
+## Allow to mknod all devices (but not using them)
+lxc.cgroup.devices.allow = c *:* m
+lxc.cgroup.devices.allow = b *:* m
+
+## Permit certain devices
+lxc.cgroup.devices.allow = c 1:3 rwm # dev/null
+lxc.cgroup.devices.allow = c 1:5 rwm # dev/zero
+
+lxc.cgroup.devices.allow = c 5:1 rwm # dev/console
+lxc.cgroup.devices.allow = c 5:0 rwm # dev/tty
+lxc.cgroup.devices.allow = c 4:0 rwm # dev/tty0
+
+lxc.cgroup.devices.allow = c 1:9 rwm # dev/urandom
+lxc.cgroup.devices.allow = c 1:8 rwm # dev/random
+lxc.cgroup.devices.allow = c 136:* rwm # dev/pts/*
+lxc.cgroup.devices.allow = c 5:2 rwm # dev/pts/ptmx
+lxc.cgroup.devices.allow = c 10:229 rwm # dev/fuse
+lxc.cgroup.devices.allow = c 254:0 rwm # dev/rtc
+
+## Limits
+#lxc.cgroup.cpu.shares = 1024
+#lxc.cgroup.cpuset.cpus = 0
+#lxc.cgroup.memory.limit_in_bytes = 256M
+#lxc.cgroup.memory.memsw.limit_in_bytes = 1G
+
+## Filesystem
+#lxc.mount.entry = /home/user /lxc/apache-wheezy.local/rootfs/home/user none defaults,bind 0 0
+EOF
+
+# Generate container fstab
+echo "Generating container fstab file..."
+cat <<EOF > $LOCATION/fstab
+none $LOCATION/rootfs/dev/pts devpts defaults 0 0
+none $LOCATION/rootfs/proc    proc   defaults 0 0
+none $LOCATION/rootfs/sys     sysfs  defaults 0 0
+none $LOCATION/rootfs/dev/shm tmpfs  defaults 0 0
+EOF
+
+## Prepare container
+
+# Set hostname
+echo "Setting hostname..."
+echo "$NAME" > $LOCATION/rootfs/etc/hostname
+
+# Update /etc/hosts
+echo "Setting /etc/hosts..."
+cat <<EOF > $LOCATION/rootfs/etc/hosts
+127.0.0.1       localhost
+::1             localhost ip6-localhost ip6-loopback
+fe00::0         ip6-localnet
+ff00::0         ip6-mcastprefix
+ff02::1         ip6-allnodes
+ff02::2         ip6-allrouters
+$IP $NAME
+EOF
+
+# Create device nodes
+echo "Creating device nodes..."
+DEV="$LOCATION/rootfs/dev"
+rm -rf "${DEV}.old" > /dev/null 2>&1
+mv "$DEV" "${DEV}.old"
+mkdir "$DEV"
+mknod -m 666 ${DEV}/null c 1 3
+mknod -m 666 ${DEV}/zero c 1 5
+mknod -m 666 ${DEV}/random c 1 8
+mknod -m 666 ${DEV}/urandom c 1 9
+mkdir -m 755 ${DEV}/pts
+mkdir -m 1777 ${DEV}/shm
+mknod -m 666 ${DEV}/tty c 5 0
+mknod -m 600 ${DEV}/console c 5 1
+mknod -m 666 ${DEV}/tty0 c 4 0
+mknod -m 666 ${DEV}/tty1 c 4 1
+mknod -m 666 ${DEV}/tty2 c 4 2
+mknod -m 666 ${DEV}/tty3 c 4 3
+mknod -m 666 ${DEV}/tty4 c 4 4
+mknod -m 666 ${DEV}/tty5 c 4 5
+mknod -m 666 ${DEV}/tty6 c 4 6
+mknod -m 666 ${DEV}/full c 1 7
+mknod -m 600 ${DEV}/initctl p
+mknod -m 666 ${DEV}/ptmx c 5 2
+
+# Set locales
+echo "Setting locale..."
+echo "$LOCALE" > $LOCATION/rootfs/etc/locale.gen
+chroot $LOCATION/rootfs apt-get -y --force-yes install locales
+
+# Installing packages
+if [[ -n $PACKAGES ]]; then
+    echo "Installing packages..."
+    eval "chroot $LOCATION/rootfs apt-get -y --force-yes install $PACKAGES"
+fi
+
+# Cleaning up
+echo "Cleaning up the system..."
+chroot $LOCATION/rootfs apt-get remove --purge -y --force-yes udev
+
+# Set root password
+echo "Set root password for the container:"
+chroot $LOCATION/rootfs passwd root
+
+cat <<EOF
+
+We are done. Container template $NAME has been created at $LOCATION. You may create and start your container now.
+Some useful tips:
+    Create container:
+        lxc-create -f $LOCATION/config -n $NAME
+    Destroy contaner:
+        lxc-destroy -n $NAME
+    Start container on background:
+        lxc-start -d -n $NAME
+    Get console acceess to the container (Ctrl+a q to leave):
+        lxc-console -n $NAME
+    Stop container:
+        lxc-stop -n $NAME
+    Stop contaier nicer way:
+        lxc-halt -n $NAME
+EOF
