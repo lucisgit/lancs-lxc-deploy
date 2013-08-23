@@ -52,6 +52,9 @@ if [[ "$ARCH" != "amd64" && "$ARCH" != "i386" ]]; then
     usage
 fi
 
+# Convert location to full path
+eval "LOCATION=$LOCATION"
+
 # Debootstrap routines
 DEBOOTSTRAP=1
 if [[ -d "$LOCATION/rootfs" ]]; then
