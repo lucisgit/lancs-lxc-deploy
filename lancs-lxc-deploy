@@ -20,27 +20,29 @@
 # Script uses some bits and ideas from the script by Robert Glonek
 # (http://glonek.co.uk/tips-tricks/lxc-on-ubuntu-howto-tutorial/)
 
+# Default settings
 REPOURL="http://ftp.us.debian.org/debian"
 LOCALE="en_GB.UTF-8 UTF-8"
-PACKAGES="vim less bash-completion" # space-separated packages to install
+PACKAGES="vim less bash-completion" # space-separated packages to install in container
 
 function usage {
         echo "Usage: $0 {NAME} {LOCATION} {ARCH} {DISTRO} {CIDR} {BRIDGE/NAT}"
         echo "E.g. $0 somecontainer /lxc/somecontainer amd64 wheezy 192.168.100.2/24 br1"
         echo "Note: /lxc/somecontainer will be created for you"
-        echo "ARCH: amd64 or i386, or whatever you use."
+        echo "ARCH: amd64 or i386."
         echo "CIDR: IP address in CIDR notation, e.g. 192.168.0.1/24"
         echo "BRIDGE/NAT should be interface NAME: br0 bridge / br1 nat"
         exit 1
 }
 
-#some checks
 NAME=$1
 LOCATION=$2
 ARCH=$3
 DISTRO=$4
 CIDR=$5
 TYPE=$6
+
+# Some checks
 
 IP="$(echo $CIDR| sed 's/\/.\+//g')"
 
