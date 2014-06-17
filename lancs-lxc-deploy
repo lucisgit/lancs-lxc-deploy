@@ -150,7 +150,6 @@ cat <<EOF > $LOCATION/fstab
 none $LOCATION/rootfs/dev/pts devpts defaults 0 0
 none $LOCATION/rootfs/proc    proc   defaults 0 0
 none $LOCATION/rootfs/sys     sysfs  defaults 0 0
-none $LOCATION/rootfs/dev/shm tmpfs  defaults 0 0
 EOF
 
 ## Prepare container
@@ -182,7 +181,6 @@ mknod -m 666 ${DEV}/zero c 1 5
 mknod -m 666 ${DEV}/random c 1 8
 mknod -m 666 ${DEV}/urandom c 1 9
 mkdir -m 755 ${DEV}/pts
-mkdir -m 1777 ${DEV}/shm
 mknod -m 666 ${DEV}/tty c 5 0
 mknod -m 600 ${DEV}/console c 5 1
 mknod -m 666 ${DEV}/tty0 c 4 0
